@@ -17,14 +17,14 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up Docker Compose
+      - name: Run Docker Compose
         run: |
-          docker-compose up -d --build
-          sleep 10  # wait for services to start
+          docker compose up -d --build
+          sleep 10
 
-      - name: Run app smoke test
+      - name: Run smoke test
         run: |
-          curl --fail http://localhost:8080 || (docker-compose logs && exit 1)
+          curl --fail http://localhost:8080 || (docker compose logs && exit 1)
 
   deploy:
     needs: build-and-test
@@ -46,13 +46,10 @@ jobs:
 
       - name: Build and Push Docker image
         run: |
-          docker build -t us-central1-docker.pkg.dev/$GCP_PROJECT_ID/sentinelwriter-repo/sentinelwriter .
-          docker push us-central1-docker.pkg.dev/$GCP_PROJECT_ID/sentinelwriter-repo/sentinelwriter
+          docker build -t us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/sentinelwriter-repo/sentinelwriter .
+          docker push us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/sentinelwriter-repo/sentinelwriter
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy sentinelwriter \
-            --image us-central1-docker.pkg.dev/$GCP_PROJECT_ID/sentinelwriter-repo/sentinelwriter \
-            --platform managed \
-            --region us-central1 \
-            --allow-unauthenticated
+            --image us-central1-docker.pkg.dev/${{ secrets
