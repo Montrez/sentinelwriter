@@ -17,14 +17,19 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
 
-      - name: Run Docker Compose
+      - name: Install Docker Compose
         run: |
-          docker compose up -d --build
-          sleep 10
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
 
-      - name: Run smoke test
+      - name: Build and run services
         run: |
-          curl --fail http://localhost:8080 || (docker compose logs && exit 1)
+          docker-compose up -d --build
+          sleep 10  # wait for services to be ready
+
+      - name: Run app smoke test
+        run: |
+          curl --fail http://localhost:8080 || (docker-compose logs && exit 1)
 
   deploy:
     needs: build-and-test
@@ -44,7 +49,7 @@ jobs:
       - name: Authenticate Docker with Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev
 
-      - name: Build and Push Docker image
+      - name: Build and push Docker image
         run: |
           docker build -t us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/sentinelwriter-repo/sentinelwriter .
           docker push us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/sentinelwriter-repo/sentinelwriter
@@ -52,4 +57,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy sentinelwriter \
-            --image us-central1-docker.pkg.dev/${{ secrets
+            --image us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/sentinelwriter-repo/sentinelwriter \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated
