@@ -1,4 +1,4 @@
-name: SentinelWriter CI
+name: SentinelWriter CI/CD
 
 on:
   push:
@@ -7,35 +7,52 @@ on:
     branches: [ main ]
 
 jobs:
-  test-and-build:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Docker Compose
+        run: |
+          docker-compose up -d --build
+          sleep 10  # wait for services to start
+
+      - name: Run app smoke test
+        run: |
+          curl --fail http://localhost:8080 || (docker-compose logs && exit 1)
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
         with:
-          python-version: 3.10
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
 
-      - name: Install dependencies
+      - name: Authenticate Docker with Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+      - name: Build and Push Docker image
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          docker build -t us-central1-docker.pkg.dev/$GCP_PROJECT_ID/sentinelwriter-repo/sentinelwriter .
+          docker push us-central1-docker.pkg.dev/$GCP_PROJECT_ID/sentinelwriter-repo/sentinelwriter
 
-      - name: Check formatting
+      - name: Deploy to Cloud Run
         run: |
-          pip install black
-          black --check .
-
-      - name: Run basic test
-        run: |
-          echo "def test_health(): assert 1 == 1" > test_dummy.py
-          pip install pytest
-          pytest test_dummy.py
-
-      - name: Build Docker image
-        run: |
-          docker build -t sentinelwriter .
-
+          gcloud run deploy sentinelwriter \
+            --image us-central1-docker.pkg.dev/$GCP_PROJECT_ID/sentinelwriter-repo/sentinelwriter \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated
